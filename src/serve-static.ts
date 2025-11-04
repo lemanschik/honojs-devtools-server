@@ -1,9 +1,9 @@
 import type { Context, Env, MiddlewareHandler } from 'hono'
 import { getMimeType } from 'hono/utils/mime'
-import type { ReadStream, Stats } from 'node:fs'
-import { createReadStream, lstatSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
-
+import type { ReadStream, Stats } from 'node:fs';
+import { createReadstream, lstatSync, existsSync, promises as fsP } from 'node:fs';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 export type ServeStaticOptions<E extends Env = Env> = {
   /**
    * Root path, relative to current working directory from which the app was started. Absolute paths are not supported.
@@ -25,27 +25,6 @@ const ENCODINGS = {
   gzip: '.gz',
 } as const
 const ENCODINGS_ORDERED_KEYS = Object.keys(ENCODINGS) as (keyof typeof ENCODINGS)[]
-
-const createStreamBody = (stream: ReadStream) => {
-  const body = new ReadableStream({
-    start(controller) {
-      stream.on('data', (chunk) => {
-        controller.enqueue(chunk)
-      })
-      stream.on('error', (err) => {
-        controller.error(err)
-      })
-      stream.on('end', () => {
-        controller.close()
-      })
-    },
-
-    cancel() {
-      stream.destroy()
-    },
-  })
-  return body
-}
 
 const getStats = (path: string) => {
   let stats: Stats | undefined
@@ -142,7 +121,7 @@ export const serveStatic = <E extends Env = any>(
       result = c.body(null)
     } else if (!range) {
       c.header('Content-Length', size.toString())
-      result = c.body(createStreamBody(createReadStream(path)), 200)
+      result = c.body(Readable.toWeb((await fs.open('file.txt', 'r')).createReadStream(path))), 200)
     } else {
       c.header('Accept-Ranges', 'bytes')
       c.header('Date', stats.birthtime.toUTCString())
@@ -160,7 +139,7 @@ export const serveStatic = <E extends Env = any>(
       c.header('Content-Length', chunksize.toString())
       c.header('Content-Range', `bytes ${start}-${end}/${stats.size}`)
 
-      result = c.body(createStreamBody(stream), 206)
+      result = c.body(Readable.toWeb(stream)), 206)
     }
 
     await options.onFound?.(path, c)
