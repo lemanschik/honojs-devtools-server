@@ -121,7 +121,7 @@ export const serveStatic = <E extends Env = any>(
       result = c.body(null)
     } else if (!range) {
       c.header('Content-Length', size.toString())
-      result = c.body(Readable.toWeb((await fs.open('file.txt', 'r')).createReadStream(path))), 200)
+      result = fsP.open(path, 'r').then(fd=>c.body(Readable.toWeb(fd.createReadStream()), 200))
     } else {
       c.header('Accept-Ranges', 'bytes')
       c.header('Date', stats.birthtime.toUTCString())
@@ -132,14 +132,11 @@ export const serveStatic = <E extends Env = any>(
       if (size < end - start + 1) {
         end = size - 1
       }
-
       const chunksize = end - start + 1
-      const stream = createReadStream(path, { start, end })
-
+   
       c.header('Content-Length', chunksize.toString())
       c.header('Content-Range', `bytes ${start}-${end}/${stats.size}`)
-
-      result = c.body(Readable.toWeb(stream)), 206)
+      result = fsP.open(path, 'r').then(fd=>c.body(Readable.toWeb(fd.createReadStream({ start, end })), 206))
     }
 
     await options.onFound?.(path, c)
