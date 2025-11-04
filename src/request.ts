@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Define prototype for lightweight pseudo Request object
-
+import type { HTTPRequest } from 'puppeteer-core/lib/types.d.ts';
 import type { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
 import { Readable } from 'node:stream'
@@ -42,9 +42,9 @@ export class Request extends GlobalRequest {
   }
 }
 
-const newHeadersFromIncoming = (incoming: IncomingMessage | Http2ServerRequest) => {
+const newHeadersFromIncoming = (incoming: HTTPRequest) => {
   const headerRecord: [string, string][] = []
-  const rawHeaders = incoming.rawHeaders
+  const rawHeaders = incoming.headers()
   for (let i = 0; i < rawHeaders.length; i += 2) {
     const { [i]: key, [i + 1]: value } = rawHeaders
     if (key.charCodeAt(0) !== /*:*/ 0x3a) {
@@ -60,7 +60,7 @@ const newRequestFromIncoming = (
   method: string,
   url: string,
   headers: Headers,
-  incoming: IncomingMessage | Http2ServerRequest,
+  incoming: HTTPRequest,
   abortController: AbortController
 ): Request => {
   const init = {
@@ -178,60 +178,11 @@ const requestPrototype: Record<string | symbol, any> = {
 Object.setPrototypeOf(requestPrototype, Request.prototype)
 
 export const newRequest = (
-  incoming: IncomingMessage | Http2ServerRequest,
+  interceptedRequest: HTTPRequest,
   defaultHostname?: string
 ) => {
   const req = Object.create(requestPrototype)
-  req[incomingKey] = incoming
-
-  const incomingUrl = incoming.url || ''
-
-  // handle absolute URL in request.url
-  if (
-    incomingUrl[0] !== '/' && // short-circuit for performance. most requests are relative URL.
-    (incomingUrl.startsWith('http://') || incomingUrl.startsWith('https://'))
-  ) {
-    if (incoming instanceof Http2ServerRequest) {
-      throw new RequestError('Absolute URL for :path is not allowed in HTTP/2') // RFC 9113 8.3.1.
-    }
-
-    try {
-      const url = new URL(incomingUrl)
-      req[urlKey] = url.href
-    } catch (e) {
-      throw new RequestError('Invalid absolute URL', { cause: e })
-    }
-
-    return req
-  }
-
-  // Otherwise, relative URL
-  const host =
-    (incoming instanceof Http2ServerRequest ? incoming.authority : incoming.headers.host) ||
-    defaultHostname
-  if (!host) {
-    throw new RequestError('Missing host header')
-  }
-
-  let scheme: string
-  if (incoming instanceof Http2ServerRequest) {
-    scheme = incoming.scheme
-    if (!(scheme === 'http' || scheme === 'https')) {
-      throw new RequestError('Unsupported scheme')
-    }
-  } else {
-    scheme = incoming.socket && (incoming.socket as TLSSocket).encrypted ? 'https' : 'http'
-  }
-
-  const url = new URL(`${scheme}://${host}${incomingUrl}`)
-
-  // check by length for performance.
-  // if suspicious, check by host. host header sometimes contains port.
-  if (url.hostname.length !== host.length && url.hostname !== host.replace(/:\d+$/, '')) {
-    throw new RequestError('Invalid host header')
-  }
-
-  req[urlKey] = url.href
-
+  req[incomingKey] = interceptedRequest;
+  req[urlKey] = interceptedRequest.url();
   return req
 }
