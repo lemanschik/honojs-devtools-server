@@ -84,12 +84,7 @@ const newRequestFromIncoming = (
     if ('rawBody' in incoming && incoming.rawBody instanceof Buffer) {
       // In some environments (e.g. firebase functions), the body is already consumed.
       // So we need to re-read the request body from `incoming.rawBody` if available.
-      init.body = new ReadableStream({
-        start(controller) {
-          controller.enqueue(incoming.rawBody)
-          controller.close()
-        },
-      })
+      init.body = incoming.rawBody
     } else if ((incoming as IncomingMessageWithWrapBodyStream)[wrapBodyStream]) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
       init.body = new ReadableStream({
